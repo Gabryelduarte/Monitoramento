@@ -1,1 +1,211 @@
+#include "DHT.h"       
+#include <ESP8266WiFi.h> 
 
+#define DHTTYPE DHT11  
+#define dht_dpin 5
+
+const char* ssid = "42W";
+const char* password = "AHR-X26327";
+int port = 80;
+
+DHT dht(dht_dpin, DHTTYPE); 
+WiFiServer server(port);
+
+int pino = 0;
+int ledPower = 4; 
+
+int samplingTime = 280;
+int deltaTime = 40;
+int sleepTime = 9680;
+
+float voltagemMedida = 0;
+float voltagem = 0;
+float densidadePoeira = 0;
+
+void setup(void){ 
+
+  dht.begin();
+  Serial.begin(9600);
+  pinMode(ledPower,OUTPUT);
+  delay(700);
+
+  Serial.println();
+  Serial.print("Conectando: ");
+  Serial.print(ssid);
+  
+  WiFi.begin(ssid, password);
+  
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+
+  Serial.println("");
+  Serial.println("WiFi conectado.");
+  
+ 
+  server.begin();
+  Serial.println("Consultando DHCP...");
+  delay(10000);
+  
+  Serial.print("Endereço IP: ");
+  Serial.println(WiFi.localIP());
+
+  Serial.print("Lik para acessar o monitoramento: http://");
+  Serial.print(WiFi.localIP());
+  Serial.print(":");
+  Serial.print(port);
+  Serial.println("/"); 
+}
+
+void loop() {
+    WiFiClient client = server.available();
+    float umidade = dht.readHumidity();
+    float temperatura = dht.readTemperature();  
+    
+    if (client) {
+      Serial.print("Reconectando...");
+        while (client.connected()) {
+
+          if (client.available()) {
+          Serial.print("Umidade: ");
+          Serial.print(umidade);
+          Serial.print("%  ");
+          Serial.print("Temperatura: ");
+          Serial.print(temperatura); 
+          Serial.println("C  ");
+
+      if(umidade <= 40){
+        Serial.println("----------- NÍVEL DE UMIDADE ------------");
+        Serial.println(">> MUITO SECO");
+        Serial.println(">> SINTOMAS: ");
+        Serial.println(">> 1. PROLIFERAÇÃO DE BATÉRIAS E VIROSES ");
+        Serial.println(">> 2. PELE SECA ");
+        Serial.println(">> 2. ECZEMA [DEMARTITE COM LESÕES] ");
+      }else if(umidade <= 60){
+        Serial.println("----------- NÍVEL DE UMIDADE ------------");
+        Serial.println(">> ÓTIMA ");
+        Serial.println(">> SEM SINTOMAS !!");
+      }else{
+        Serial.println("------------ NÍVEL DE UMIDADE ------------");
+        Serial.println(">> MUITO ÚMIDO ");
+        Serial.println(">> SINTOMAS: ");
+        Serial.println(">> 1. PROLIFERAÇÃO DE FUNGOS E ÁCAROS ");
+      }
+
+      digitalWrite(ledPower,LOW);
+      delayMicroseconds(280);
+
+      voltagemMedida = analogRead(pino);
+
+      delayMicroseconds(40);
+      digitalWrite(ledPower,HIGH);
+      delayMicroseconds(9680);
+
+        voltagem = voltagemMedida * (3.3 / 1024);
+        densidadePoeira = (0.17 * voltagem - 0.1);
+
+        if (densidadePoeira < 0){
+            densidadePoeira = 0.00;
+        }
+ 
+        Serial.println("------------ PARTICULAS NO AR ------------");
+        Serial.print(">> VALOR BRUTO DO SINAL: ");
+        Serial.println(voltagemMedida);
+        Serial.print(">> VOLTAGEM: ");
+        Serial.println(voltagem);
+        Serial.print(">> DENSIDADE DE POEIRA: ");
+        Serial.print(densidadePoeira);
+        Serial.print(" ug/m3");
+        Serial.println("");
+        
+
+        // -- WEB SERVICE --
+          client.println("HTTP/1.1 200 OK");
+          client.println("Content-Type: text/html");
+          client.println("Connection: close");  // the connection will be closed after completion of the response
+          client.println("Refresh: 60");  // refresh the page automatically every 60 sec
+          client.println();
+          client.println(F("<!DOCTYPE html>"));
+          client.println(F("<html lang='en'>"));
+          client.print(F("<head>"));
+          client.print(F("<meta charset='UTF-8'>"));
+          client.println(F("<style type=\"text/css\">"));
+          client.println(F(".styled-table {border-collapse: collapse;margin: 25px 0;font-size: 0.9em;font-family: sans-serif;width: 600px;box-shadow: 0 0 20px rgba(0, 0, 0, 0.15);overflow-y: auto;}.styled-table thead tr {background-color: #009879;color: #ffffff;text-align: left;}.styled-table th,.styled-table td {padding: 12px 15px;}.styled-table tbody tr {border-bottom: 1px solid #dddddd;}.styled-table tbody tr:nth-of-type(even) {background-color: #f3f3f3;}.styled-table tbody tr:last-of-type {border-bottom: 2px solid #009879;}.styled-table tbody tr.active-row {font-weight: bold; color: #009879;}@media screen and (max-width:600px) {.styled-table {width: 100vw;margin-right: 10px;}}@media screen and (max-width:376px) {.styled-table {overflow: scroll;overflow: auto;}}@media screen and (max-width:281) {.styled-table {overflow: scroll;overflow: auto; }}"));
+          client.println(F("</style>"));
+          client.print(F("    <meta http-equiv='X-UA-Compatible' content='IE=edge'>"));
+          client.print(F("    <meta name='viewport' content='width=device-width, initial-scale=1.0'>"));
+          client.print(F("    <title>Document</title>"));
+          client.print(F("</head>"));
+          client.print(F("<body>"));
+          client.print(F("<div style='width:100%;display:flex;justify-content:center;align-items: center;'>"));
+          client.print(F("    <table class='styled-table'>"));
+          client.print(F("        <thead>"));
+          client.print(F("            <tr >"));
+          client.print(F("                <th></th>"));
+          client.print(F("                <th>Monitoramento do ar"));
+          client.print(F("                <th></th>"));
+          client.print(F("            </tr>"));
+          client.print(F("            <tr>"));
+          client.print(F("                <th>Sensor</th>"));
+          client.print(F("                <th>Valor</th>"));
+          client.print(F("                <th>Status</th>"));
+          client.print(F("            </tr>"));
+          client.print(F("        </thead>"));
+          client.print(F("        <tbody>"));
+          client.print(F("            <tr class='active-row'>"));
+          client.print(F("                <td>Temperatura</td>"));
+          client.print(F("<td>"));
+          client.print(temperatura);
+          client.print(" ºC");
+          client.print(F("</td>"));
+          if (temperatura > 35) {
+            client.print(F("                <td style='color:red'>CRÍTICA</td>"));
+          } else if (temperatura >= 30) {
+            client.print(F("                <td style='color:orange'>ANORMAL</td>"));
+          } else {
+            client.print(F("                <td>Normal</td>"));
+          }
+
+          client.print(F("            </tr>"));
+          client.print(F("            <tr class='active-row'>"));
+          client.print(F("                <td>Umidade do Ar</td>"));
+          client.print(F("<td>"));
+          client.print(umidade);
+          client.print(" %");
+          client.print(F("</td>"));
+          if (umidade <= 40) {
+            client.print(F("                <td style='color:red'>Seco</td>"));
+          } else if (umidade > 60) {
+            client.print(F("                <td style='color:orange'>Úmido</td>"));
+          } else {
+            client.print(F("                <td>Normal</td>"));
+          }
+          client.print(F("            </tr>"));
+          client.print(F("            <tr class='active-row'>"));
+          client.print(F("                <td>Poeira</td>"));
+          client.print(F("<td>"));
+          client.print(densidadePoeira);
+          client.print(" ug/m3");
+          client.print(F("</td>"));
+          if (densidadePoeira > 50) {
+            client.print(F("                <td style='color:red'>CRÍTICA</td>"));
+
+          } else if (densidadePoeira > 30) {
+            client.print(F("                <td style='color:orange'>ANORMAL</td>"));
+          } else {
+            client.print(F("                <td>Normal</td>"));
+          }
+          client.print(F("            </tr>"));
+          client.print(F("        </tbody>"));
+          client.print(F("    </table>"));
+          client.print(F("</div>"));
+          client.print(F("</body>"));
+          client.println(F("</html>"));
+        break;
+
+        delay(5000);
+      }
+    }
+  }
+}
